@@ -1,0 +1,32 @@
+{
+  "name": "ai-professor",
+  "private": true,
+  "version": "1.0.0",
+  "description": "An AI-powered academic interface for domain-specific learning.",
+  "author": "Antigravity Engineering",
+  "keywords": [
+    "ai",
+    "education",
+    "react",
+    "gemini",
+    "typescript"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "start": "concurrently -k \"npm run dev\" \"python -m uvicorn server:app --reload --port 8000\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@google/genai": "^1.7.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "concurrently": "^9.2.1",
+    "typescript": "~5.8.2",
+    "vite": "^6.4.1"
+  }
+}

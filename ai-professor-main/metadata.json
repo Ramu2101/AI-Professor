@@ -1,0 +1,5 @@
+{
+  "name": "AI Professor",
+  "description": "An application where a virtual AI professor provides animated video explanations on user-requested topics, simulating a one-on-one lecture experience.",
+  "requestFramePermissions": []
+}
