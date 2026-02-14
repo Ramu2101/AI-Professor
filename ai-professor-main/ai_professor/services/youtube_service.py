@@ -7,7 +7,7 @@ import streamlit as st
 
 
 class YouTubeServiceError(RuntimeError):
-    """Raised when YouTube API lookup fails."""
+    """Raised when YouTube API search fails."""
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -15,7 +15,6 @@ def search_youtube_video(topic: str, youtube_api_key: str) -> dict[str, Any] | N
     if not youtube_api_key:
         return None
 
-    url = "https://www.googleapis.com/youtube/v3/search"
     params = {
         "part": "snippet",
         "q": f"{topic} tutorial",
@@ -25,14 +24,14 @@ def search_youtube_video(topic: str, youtube_api_key: str) -> dict[str, Any] | N
     }
 
     try:
-        response = requests.get(url, params=params, timeout=20)
+        response = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=20)
         data = response.json()
     except requests.exceptions.Timeout as exc:
         raise YouTubeServiceError("YouTube request timed out.") from exc
     except requests.exceptions.ConnectionError as exc:
         raise YouTubeServiceError("Network error while contacting YouTube API.") from exc
     except requests.exceptions.RequestException as exc:
-        raise YouTubeServiceError(f"YouTube API request failed: {exc}") from exc
+        raise YouTubeServiceError(f"YouTube request failed: {exc}") from exc
 
     if response.status_code != 200:
         error = data.get("error", {})
@@ -42,10 +41,10 @@ def search_youtube_video(topic: str, youtube_api_key: str) -> dict[str, Any] | N
         if errors:
             reason = errors[0].get("reason", "")
 
-        reason_or_message = (reason or message).lower()
-        if "quota" in reason_or_message:
-            raise YouTubeServiceError("YouTube API quota exceeded. Try again later.")
-        if "keyinvalid" in reason_or_message or "api key" in reason_or_message:
+        normalized = (reason or message).lower()
+        if "quota" in normalized:
+            raise YouTubeServiceError("YouTube API quota exceeded. Please try later.")
+        if "keyinvalid" in normalized or "api key" in normalized:
             raise YouTubeServiceError("Invalid YouTube API key.")
         raise YouTubeServiceError(f"YouTube API error: {reason or message}")
 
@@ -53,13 +52,15 @@ def search_youtube_video(topic: str, youtube_api_key: str) -> dict[str, Any] | N
     if not items:
         return None
 
-    video_id = items[0].get("id", {}).get("videoId")
-    title = items[0].get("snippet", {}).get("title", "")
+    first = items[0]
+    video_id = first.get("id", {}).get("videoId")
+    title = first.get("snippet", {}).get("title", "")
+
     if not video_id:
         return None
 
     return {
         "video_id": video_id,
         "title": title,
-        "video_url": f"https://www.youtube.com/watch?v={video_id}",
+        "url": f"https://www.youtube.com/watch?v={video_id}",
     }

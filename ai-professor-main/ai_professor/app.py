@@ -1,50 +1,20 @@
 from __future__ import annotations
 
-import os
-from typing import Any
-
 import streamlit as st
-from dotenv import load_dotenv
 
-from ai_professor.services.gemini_service import (
-    GeminiConfigError,
-    GeminiResponse,
-    GeminiServiceError,
-    generate_topic_pack,
+from ai_professor.components.diagram import render_concept_diagram
+from ai_professor.components.layout import (
+    apply_classroom_styles,
+    render_footer,
+    render_sidebar,
+    render_top_header,
 )
-from ai_professor.services.youtube_service import (
-    YouTubeServiceError,
-    search_youtube_video,
-)
-from ai_professor.utils.formatting import render_bullets, render_diagram
+from ai_professor.services.gemini_service import GeminiServiceError, LearningContent, generate_learning_content
+from ai_professor.services.youtube_service import YouTubeServiceError, search_youtube_video
+from ai_professor.utils.env import get_api_key, load_local_env
 
 
-load_dotenv()
-
-
-st.set_page_config(
-    page_title="AI Professor",
-    page_icon="\U0001F393",
-    layout="wide",
-)
-
-
-def _safe_secret(name: str) -> str | None:
-    value = None
-    try:
-        if name in st.secrets:
-            value = st.secrets[name]
-    except Exception:
-        value = None
-
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-
-    env_value = os.getenv(name)
-    if isinstance(env_value, str) and env_value.strip():
-        return env_value.strip()
-
-    return None
+st.set_page_config(page_title="AI Professor", page_icon="\U0001F393", layout="wide")
 
 
 def _init_state() -> None:
@@ -56,68 +26,22 @@ def _init_state() -> None:
         st.session_state.last_video = None
 
 
-def _render_sidebar() -> None:
-    with st.sidebar:
-        st.markdown("## AI Professor")
-        st.caption("Structured AI Learning System")
-        st.markdown("---")
-        st.markdown("### Topic History")
-        history = st.session_state.topic_history
-        if history:
-            for topic in history[-10:][::-1]:
-                st.caption(f"- {topic}")
-        else:
-            st.caption("No topics generated yet.")
-
-        if st.button("Clear history", use_container_width=True):
-            st.session_state.topic_history = []
-            st.success("History cleared")
+def _render_bullets(items: list[str], empty_text: str = "No items available.") -> None:
+    if not items:
+        st.write(empty_text)
+        return
+    for item in items:
+        st.markdown(f"- {item}")
 
 
-def _render_header() -> None:
-    st.title("AI Professor")
-    st.markdown("### Your structured AI learning workspace")
-    st.write("")
-
-
-def _render_main_controls() -> tuple[str, str, bool]:
-    _, center, _ = st.columns([1, 4, 1])
-    with center:
-        topic = st.text_input(
-            "Enter a topic",
-            placeholder="e.g., Transformer Architecture in NLP",
-            label_visibility="visible",
-        )
-        mode = st.radio(
-            "Learning mode",
-            ["Beginner", "Advanced"],
-            horizontal=True,
-        )
-        generate_clicked = st.button(
-            "Generate Learning Pack",
-            type="primary",
-            use_container_width=True,
-        )
-    return topic.strip(), mode, generate_clicked
-
-
-def _debug_key_status(gemini_key: str | None, youtube_key: str | None) -> None:
-    gemini_ok = "available" if gemini_key else "missing"
-    youtube_ok = "available" if youtube_key else "missing"
-    st.caption(f"Environment check: GEMINI_API_KEY={gemini_ok}, YOUTUBE_API_KEY={youtube_ok}")
-
-
-def _run_generation(topic: str, mode: str, gemini_key: str, youtube_key: str | None) -> None:
+def _generate(topic: str, mode: str, gemini_api_key: str, youtube_api_key: str | None) -> None:
     if not topic:
         st.error("Please enter a topic before generating content.")
         return
 
-    with st.spinner("Generating structured learning content..."):
+    with st.spinner("Professor is thinking..."):
         try:
-            result = generate_topic_pack(topic=topic, mode=mode, gemini_api_key=gemini_key)
-        except GeminiConfigError as exc:
-            st.error(str(exc))
-            return
+            content = generate_learning_content(topic=topic, mode=mode, gemini_api_key=gemini_api_key)
         except GeminiServiceError as exc:
             st.error(str(exc))
             return
@@ -126,22 +50,22 @@ def _run_generation(topic: str, mode: str, gemini_key: str, youtube_key: str | N
             return
 
     video = None
-    if youtube_key:
-        with st.spinner("Searching YouTube lesson..."):
+    if youtube_api_key:
+        with st.spinner("Professor is finding a lesson video..."):
             try:
-                video = search_youtube_video(topic=topic, youtube_api_key=youtube_key)
+                video = search_youtube_video(topic=topic, youtube_api_key=youtube_api_key)
             except YouTubeServiceError as exc:
                 st.warning(str(exc))
             except Exception:
-                st.warning("Unable to fetch YouTube video due to an unexpected error.")
+                st.warning("Unable to fetch YouTube video right now.")
 
-    st.session_state.last_result = result
+    st.session_state.last_result = content
     st.session_state.last_video = video
     if topic not in st.session_state.topic_history:
         st.session_state.topic_history.append(topic)
 
 
-def _render_results(result: GeminiResponse, video: dict[str, Any] | None) -> None:
+def _render_results(topic: str, content: LearningContent, video: dict | None) -> None:
     tabs = st.tabs([
         "\U0001F4D8 Explanation",
         "\U0001F3A5 Video",
@@ -153,93 +77,93 @@ def _render_results(result: GeminiResponse, video: dict[str, Any] | None) -> Non
     with tabs[0]:
         with st.container(border=True):
             st.subheader("SECTION 1: Simple Explanation")
-            st.write(result.simple_explanation)
+            st.write(content.simple_explanation)
 
         with st.container(border=True):
             st.subheader("SECTION 2: Key Concepts")
-            render_bullets(result.key_concepts)
+            _render_bullets(content.key_concepts)
 
         with st.container(border=True):
-            st.subheader("SECTION 3: Real World Applications")
-            render_bullets(result.real_world_applications)
+            st.subheader("SECTION 3: Real-world Applications")
+            _render_bullets(content.real_world_applications)
 
     with tabs[1]:
         with st.container(border=True):
-            st.subheader("Relevant Video")
-            if video and video.get("video_url"):
-                st.video(video["video_url"])
+            st.subheader("Video Lesson")
+            if video and video.get("url"):
+                st.video(video["url"])
                 if video.get("title"):
                     st.caption(video["title"])
             else:
-                st.info("No relevant video found for this topic.")
+                st.info("No video found for this topic.")
 
     with tabs[2]:
         with st.container(border=True):
             st.subheader("SECTION 4: Diagram")
-            render_diagram(result.diagram_mermaid, result.key_concepts)
+            render_concept_diagram(topic, content.key_concepts, content.real_world_applications)
 
     with tabs[3]:
         with st.container(border=True):
             st.subheader("SECTION 5: Prerequisites")
-            render_bullets(result.prerequisites)
+            _render_bullets(content.prerequisites)
 
         with st.container(border=True):
             st.subheader("SECTION 6: What To Learn Next")
-            render_bullets(result.what_to_learn_next)
+            _render_bullets(content.what_to_learn_next)
 
         with st.container(border=True):
-            st.subheader("SECTION 7: Mini Roadmap (Beginner -> Advanced)")
+            st.subheader("SECTION 7: Roadmap (Beginner -> Intermediate -> Advanced)")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("**Beginner**")
-                render_bullets(result.mini_roadmap.get("Beginner", []))
+                _render_bullets(content.roadmap.get("Beginner", []))
             with c2:
                 st.markdown("**Intermediate**")
-                render_bullets(result.mini_roadmap.get("Intermediate", []))
+                _render_bullets(content.roadmap.get("Intermediate", []))
             with c3:
                 st.markdown("**Advanced**")
-                render_bullets(result.mini_roadmap.get("Advanced", []))
+                _render_bullets(content.roadmap.get("Advanced", []))
 
     with tabs[4]:
         with st.container(border=True):
             st.subheader("SECTION 8: Suggested Projects")
-            render_bullets(result.suggested_projects)
+            _render_bullets(content.suggested_projects)
 
         with st.container(border=True):
             st.subheader("SECTION 9: Interview Questions")
-            render_bullets(result.interview_questions)
-
-
-def _render_footer() -> None:
-    st.markdown("---")
-    st.caption("AI Professor | Structured AI Learning System")
+            _render_bullets(content.interview_questions)
 
 
 def main() -> None:
+    load_local_env()
     _init_state()
+    apply_classroom_styles()
 
-    gemini_key = _safe_secret("GEMINI_API_KEY") or _safe_secret("GOOGLE_API_KEY")
-    youtube_key = _safe_secret("YOUTUBE_API_KEY")
+    mode = render_sidebar(st.session_state.topic_history)
+    render_top_header()
 
-    _render_sidebar()
-    _render_header()
-    _debug_key_status(gemini_key, youtube_key)
+    gemini_api_key = get_api_key("GEMINI_API_KEY") or get_api_key("GOOGLE_API_KEY")
+    youtube_api_key = get_api_key("YOUTUBE_API_KEY")
 
-    if not gemini_key:
-        st.error("GEMINI_API_KEY missing in environment.")
+    if not gemini_api_key:
+        st.error("GEMINI_API_KEY missing. Add it to Streamlit Secrets.")
         st.stop()
 
-    topic, mode, generate_clicked = _render_main_controls()
+    _, center, _ = st.columns([1, 5, 1])
+    with center:
+        topic = st.text_input("Enter topic", placeholder="e.g., Attention Mechanism in Transformers")
+        generate_clicked = st.button("Generate Classroom Session", type="primary", use_container_width=True)
+
     if generate_clicked:
-        _run_generation(topic=topic, mode=mode, gemini_key=gemini_key, youtube_key=youtube_key)
+        _generate(topic=topic.strip(), mode=mode, gemini_api_key=gemini_api_key, youtube_api_key=youtube_api_key)
 
-    result = st.session_state.last_result
-    if result:
-        _render_results(result, st.session_state.last_video)
+    if st.session_state.last_result:
+        current_topic = topic.strip() if topic.strip() else st.session_state.topic_history[-1]
+        _render_results(current_topic, st.session_state.last_result, st.session_state.last_video)
     else:
-        st.info("Enter a topic and click Generate Learning Pack.")
+        st.info("Enter a topic and generate your learning session.")
 
-    _render_footer()
+    render_footer()
 
 
 if __name__ == "__main__":
