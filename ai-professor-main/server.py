@@ -68,18 +68,26 @@ async def ask_professor(request: StudentQuestion):
         # Using gemini-flash-latest for better stability/quota management
         model = genai.GenerativeModel('gemini-flash-latest')
         prompt = f"""
-        Explain this topic simply: '{request.question}'.
+        Explain this topic in detail for a curious undergraduate student: '{request.question}'.
         Return a valid JSON object with exactly these keys:
-        - "definition": A clear, simple explanation.
-        - "key_notes": A list of 3-5 distinct bullet points.
-        - "application": A paragraph describing real-world use cases.
+        - "definition": A thorough explanation (at least 180 words) covering what it is, how it works, and why it matters.
+        - "key_notes": A list of 8-12 distinct, information-dense bullet points. Each bullet should be 1-2 complete sentences.
+        - "application": A detailed practical explanation (at least 140 words) including realistic real-world examples, trade-offs, and limitations.
+
+        Rules:
+        - Be specific and educational, not generic.
+        - Prefer concrete examples over abstract statements.
+        - Keep language clear, but do not oversimplify.
+        - Output JSON only.
         """
         
         try:
             response = model.generate_content(
                 contents=prompt,
                 generation_config={
-                    "response_mime_type": "application/json"
+                    "response_mime_type": "application/json",
+                    "temperature": 0.35,
+                    "max_output_tokens": 2048,
                 }
             )
         except Exception as gemini_error:
