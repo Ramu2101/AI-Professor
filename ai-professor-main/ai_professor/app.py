@@ -35,22 +35,67 @@ def _render_bullets(items: list[str], empty_text: str = "No items available.") -
         st.markdown(f"- {item}")
 
 
-def _generate(topic: str, mode: str, youtube_api_key: str | None) -> None:
+def _is_demo_mode() -> bool:
+    value = st.secrets["DEMO_MODE"] if "DEMO_MODE" in st.secrets else "false"
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _demo_content(topic: str, mode: str) -> LearningContent:
+    mode_note = "simple and beginner-friendly" if mode == "Beginner" else "more technical and advanced"
+    return LearningContent(
+        simple_explanation=f"{topic} is explained in a {mode_note} way. It helps systems learn patterns from data and make predictions or decisions.",
+        key_concepts=[
+            "Data and features",
+            "Training and testing",
+            "Model and parameters",
+            "Evaluation metrics",
+            "Overfitting vs generalization",
+        ],
+        real_world_applications=[
+            "Recommendation systems",
+            "Spam filtering and fraud detection",
+            "Medical image analysis",
+            "Forecasting and demand planning",
+        ],
+        prerequisites=["Basic Python", "Statistics fundamentals", "Linear algebra basics"],
+        what_to_learn_next=["Supervised learning", "Unsupervised learning", "Model deployment"],
+        roadmap={
+            "Beginner": ["Learn Python basics", "Understand datasets", "Train a first classifier"],
+            "Intermediate": ["Feature engineering", "Cross-validation", "Model tuning"],
+            "Advanced": ["Deep learning", "MLOps pipelines", "Monitoring and drift handling"],
+        },
+        suggested_projects=[
+            "House price prediction",
+            "Movie recommendation mini-app",
+            "Customer churn prediction dashboard",
+        ],
+        interview_questions=[
+            "What is overfitting and how do you reduce it?",
+            "Difference between precision and recall?",
+            "Why is train/validation/test split important?",
+        ],
+    )
+
+
+def _generate(topic: str, mode: str, youtube_api_key: str | None, demo_mode: bool) -> None:
     if not topic:
         st.error("Please enter a topic before generating content.")
         return
 
-    with st.spinner("Professor is thinking..."):
-        try:
-            content = generate_learning_content(topic=topic, mode=mode)
-        except GeminiServiceError as exc:
-            st.error(str(exc))
-            if "quota" in str(exc).lower() or "resourceexhausted" in str(exc).lower() or "429" in str(exc):
-                st.info("This is a Gemini project/key quota limit. Use a different API key, wait for quota reset, or enable billing in Google AI Studio/Cloud.")
-            return
-        except Exception as exc:
-            st.error(f"Unexpected error while generating content: {exc}")
-            return
+    if demo_mode:
+        content = _demo_content(topic=topic, mode=mode)
+    else:
+        with st.spinner("Professor is thinking..."):
+            try:
+                content = generate_learning_content(topic=topic, mode=mode)
+            except GeminiServiceError as exc:
+                st.error(str(exc))
+                if "quota" in str(exc).lower() or "resourceexhausted" in str(exc).lower() or "429" in str(exc):
+                    st.info("This is a Gemini project/key quota limit. Use a different API key, wait for quota reset, or enable billing in Google AI Studio/Cloud.")
+                return
+            except Exception as exc:
+                st.error(f"Unexpected error while generating content: {exc}")
+                return
 
     video: dict | None = None
     if youtube_api_key:
@@ -160,10 +205,13 @@ def main() -> None:
 
     mode = render_sidebar(st.session_state.topic_history)
     render_top_header()
+    demo_mode = _is_demo_mode()
 
-    if "GEMINI_API_KEY" not in st.secrets:
+    if not demo_mode and "GEMINI_API_KEY" not in st.secrets:
         st.error("GEMINI_API_KEY missing. Add it to Streamlit Secrets.")
         st.stop()
+    if demo_mode:
+        st.info("Demo mode is ON. Using local sample content without Gemini API calls.")
 
     youtube_api_key = st.secrets["YOUTUBE_API_KEY"] if "YOUTUBE_API_KEY" in st.secrets else None
 
@@ -173,7 +221,7 @@ def main() -> None:
         generate_clicked = st.button("Generate Classroom Session", type="primary", use_container_width=True)
 
     if generate_clicked:
-        _generate(topic=topic.strip(), mode=mode, youtube_api_key=youtube_api_key)
+        _generate(topic=topic.strip(), mode=mode, youtube_api_key=youtube_api_key, demo_mode=demo_mode)
 
     if st.session_state.last_result:
         current_topic = topic.strip() if topic.strip() else st.session_state.topic_history[-1]
