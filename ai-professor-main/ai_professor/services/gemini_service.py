@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-import google.generativeai as genai
 import streamlit as st
 
 
@@ -26,13 +25,17 @@ class LearningContent:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def generate_learning_content(topic: str, mode: str, gemini_api_key: str) -> LearningContent:
-    if not gemini_api_key:
-        raise GeminiServiceError("GEMINI_API_KEY missing. Add it to Streamlit Secrets.")
-
+def generate_learning_content(topic: str, mode: str) -> LearningContent:
     try:
-        genai.configure(api_key=gemini_api_key)
+        import google.generativeai as genai
+        import streamlit as st
+
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         model = genai.GenerativeModel("gemini-1.5-flash")
+        if "GEMINI_MODEL" in st.secrets and str(st.secrets["GEMINI_MODEL"]).strip():
+            model = genai.GenerativeModel(str(st.secrets["GEMINI_MODEL"]).strip())
+    except KeyError as exc:
+        raise GeminiServiceError("GEMINI_API_KEY missing. Add it to Streamlit Secrets.") from exc
     except Exception as exc:
         raise GeminiServiceError(f"Gemini initialization failed: {exc}") from exc
 
@@ -75,14 +78,8 @@ Rules:
             },
         )
     except Exception as exc:
-        message = str(exc).lower()
-        if "quota" in message or "429" in message or "rate" in message:
-            raise GeminiServiceError("Gemini API quota exceeded. Please try again later.") from exc
-        if "api key" in message or "permission" in message or "unauthorized" in message:
-            raise GeminiServiceError("Invalid Gemini API key. Check Streamlit Secrets.") from exc
-        if "network" in message or "connection" in message or "timeout" in message:
-            raise GeminiServiceError("Network error while contacting Gemini API.") from exc
-        raise GeminiServiceError(f"Gemini request failed: {exc}") from exc
+        # Surface the raw provider error so deployment/debug issues are visible in Streamlit UI.
+        raise GeminiServiceError(f"{type(exc).__name__}: {exc}") from exc
 
     payload = _safe_json_parse(getattr(response, "text", ""))
 

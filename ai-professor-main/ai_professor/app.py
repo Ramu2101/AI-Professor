@@ -9,9 +9,10 @@ from ai_professor.components.layout import (
     render_sidebar,
     render_top_header,
 )
+from urllib.parse import quote_plus
+
 from ai_professor.services.gemini_service import GeminiServiceError, LearningContent, generate_learning_content
 from ai_professor.services.youtube_service import YouTubeServiceError, search_youtube_video
-from ai_professor.utils.env import get_api_key, load_local_env
 
 
 st.set_page_config(page_title="AI Professor", page_icon="\U0001F393", layout="wide")
@@ -34,22 +35,24 @@ def _render_bullets(items: list[str], empty_text: str = "No items available.") -
         st.markdown(f"- {item}")
 
 
-def _generate(topic: str, mode: str, gemini_api_key: str, youtube_api_key: str | None) -> None:
+def _generate(topic: str, mode: str, youtube_api_key: str | None) -> None:
     if not topic:
         st.error("Please enter a topic before generating content.")
         return
 
     with st.spinner("Professor is thinking..."):
         try:
-            content = generate_learning_content(topic=topic, mode=mode, gemini_api_key=gemini_api_key)
+            content = generate_learning_content(topic=topic, mode=mode)
         except GeminiServiceError as exc:
             st.error(str(exc))
+            if "quota" in str(exc).lower() or "resourceexhausted" in str(exc).lower() or "429" in str(exc):
+                st.info("This is a Gemini project/key quota limit. Use a different API key, wait for quota reset, or enable billing in Google AI Studio/Cloud.")
             return
-        except Exception:
-            st.error("Unexpected error while generating content. Please try again.")
+        except Exception as exc:
+            st.error(f"Unexpected error while generating content: {exc}")
             return
 
-    video = None
+    video: dict | None = None
     if youtube_api_key:
         with st.spinner("Professor is finding a lesson video..."):
             try:
@@ -58,6 +61,19 @@ def _generate(topic: str, mode: str, gemini_api_key: str, youtube_api_key: str |
                 st.warning(str(exc))
             except Exception:
                 st.warning("Unable to fetch YouTube video right now.")
+    else:
+        search_query = quote_plus(f"{topic} tutorial")
+        video = {
+            "title": f"{topic} tutorial (YouTube search)",
+            "search_url": f"https://www.youtube.com/results?search_query={search_query}",
+        }
+
+    if video is None:
+        search_query = quote_plus(f"{topic} tutorial")
+        video = {
+            "title": f"{topic} tutorial (YouTube search)",
+            "search_url": f"https://www.youtube.com/results?search_query={search_query}",
+        }
 
     st.session_state.last_result = content
     st.session_state.last_video = video
@@ -92,6 +108,10 @@ def _render_results(topic: str, content: LearningContent, video: dict | None) ->
             st.subheader("Video Lesson")
             if video and video.get("url"):
                 st.video(video["url"])
+                if video.get("title"):
+                    st.caption(video["title"])
+            elif video and video.get("search_url"):
+                st.link_button("Open YouTube results", video["search_url"], use_container_width=True)
                 if video.get("title"):
                     st.caption(video["title"])
             else:
@@ -135,19 +155,17 @@ def _render_results(topic: str, content: LearningContent, video: dict | None) ->
 
 
 def main() -> None:
-    load_local_env()
     _init_state()
     apply_classroom_styles()
 
     mode = render_sidebar(st.session_state.topic_history)
     render_top_header()
 
-    gemini_api_key = get_api_key("GEMINI_API_KEY") or get_api_key("GOOGLE_API_KEY")
-    youtube_api_key = get_api_key("YOUTUBE_API_KEY")
-
-    if not gemini_api_key:
+    if "GEMINI_API_KEY" not in st.secrets:
         st.error("GEMINI_API_KEY missing. Add it to Streamlit Secrets.")
         st.stop()
+
+    youtube_api_key = st.secrets["YOUTUBE_API_KEY"] if "YOUTUBE_API_KEY" in st.secrets else None
 
     _, center, _ = st.columns([1, 5, 1])
     with center:
@@ -155,7 +173,7 @@ def main() -> None:
         generate_clicked = st.button("Generate Classroom Session", type="primary", use_container_width=True)
 
     if generate_clicked:
-        _generate(topic=topic.strip(), mode=mode, gemini_api_key=gemini_api_key, youtube_api_key=youtube_api_key)
+        _generate(topic=topic.strip(), mode=mode, youtube_api_key=youtube_api_key)
 
     if st.session_state.last_result:
         current_topic = topic.strip() if topic.strip() else st.session_state.topic_history[-1]
